@@ -3,7 +3,7 @@ import antfu from '@antfu/eslint-config';
 
 export default antfu(
   {
-    unocss: false,
+    unocss: true,
     rules: {
       'no-console': 'off',
       'node/prefer-global/process': 'off',
