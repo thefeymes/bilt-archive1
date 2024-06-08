@@ -36,32 +36,39 @@ type EventValue =
   | [string, string[] | null]
   | [string, string[] | null, string[] | null];
 
+type BiltProps = {
+  model: any;
+  reactiveFn: Function;
+  listItems?: {
+    __list?: string[];
+  } & Partial<{
+    [key: string]: {
+      item: any;
+      index: number;
+      modelString: string;
+    };
+  }>;
+};
 function isBiltNodeReactive(node: BiltNode): node is BiltNodeReactive {
   return (node as BiltNodeReactive).$ !== undefined;
 }
 
-function getNodes(
-  nodes: BiltNodes,
-  model: any,
-  reactiveFn: Function,
-  listItems = [] as any
-) {
+function getNodes(nodes: BiltNodes, biltProps: BiltProps) {
   const render = [];
-  const nodesEl = reactiveFn();
+  if (!biltProps.listItems) {
+    biltProps.listItems = {};
+    biltProps.listItems.__list = [];
+  }
+  const nodesEl = biltProps.reactiveFn();
   nodes.forEach((node, nodeIndex) => {
-    render.push(getNode(node, model, reactiveFn, listItems));
+    render.push(getNode(node, biltProps));
   });
 }
 
-function getNode(
-  node: BiltNode,
-  model: any,
-  reactiveFn: Function,
-  listItems = [] as any
-): any {
+function getNode(node: BiltNode, biltProps: BiltProps): any {
   if (isBiltNodeReactive(node)) {
     if (typeof node.$ == 'string') {
-      return model[node.$];
+      return biltProps.model[node.$];
     } else {
       if (node.$.if) {
         // always evaluate if first
@@ -69,41 +76,37 @@ function getNode(
         let elseNode;
         const [biltNodeIf, modelString] = node.$.if;
         ifNode = Array.isArray(biltNodeIf)
-          ? getNodes(biltNodeIf as BiltNodes, model, reactiveFn, listItems)
-          : getNode(biltNodeIf as BiltNode, model, reactiveFn, listItems);
+          ? getNodes(biltNodeIf as BiltNodes, biltProps)
+          : getNode(biltNodeIf as BiltNode, biltProps);
 
         if (node.$.else) {
           const biltNodeElse = node.$.else;
           elseNode = Array.isArray(biltNodeElse)
-            ? getNodes(biltNodeElse as BiltNodes, model, reactiveFn, listItems)
-            : getNode(biltNodeElse as BiltNode, model, reactiveFn, listItems);
+            ? getNodes(biltNodeElse as BiltNodes, biltProps)
+            : getNode(biltNodeElse as BiltNode, biltProps);
         }
 
-        return model[modelString] ? ifNode : elseNode;
+        return biltProps.model[modelString] ? ifNode : elseNode;
       }
       if (node.$.list) {
         // evaluate list
         const [biltNode, modelString] = node.$.list;
         // todo: need to add parent items into list elements
-        return model[modelString].map((item: any, index: number) =>
-          Array.isArray(biltNode)
-            ? getNodes(
-                biltNode as BiltNodes,
-                model,
-                reactiveFn,
-                listItems.push([item, index, modelString])
-              )
-            : getNode(
-                biltNode as BiltNode,
-                model,
-                reactiveFn,
-                listItems.push([item, index, modelString])
-              )
-        );
+        return biltProps.model[modelString].map((item: any, index: number) => {
+          biltProps.listItems!.__list!.push(modelString);
+          biltProps.listItems![modelString] = {
+            index,
+            item,
+            modelString,
+          };
+          return Array.isArray(biltNode)
+            ? getNodes(biltNode as BiltNodes, biltProps)
+            : getNode(biltNode as BiltNode, biltProps);
+        });
       }
     }
   } else if (Array.isArray(node)) {
-    const nodeEl = reactiveFn();
+    const nodeEl = biltProps.reactiveFn();
 
     const [component, props, children] = node;
   } else {
@@ -112,11 +115,11 @@ function getNode(
   }
 }
 
-function parseReactiveString(str: string, biltProps: any) {
+function parseReactiveString(str: string, biltProps: BiltProps) {
   let arr = str.split('.');
   let model = biltProps.model;
   if (arr[0].startsWith('__bilt')) {
-    model = biltProps[arr[0].substring(6)];
+    model = biltProps[arr[0].substring(6) as keyof BiltProps];
     arr.length > 1 ? arr.shift() : (arr = []);
   }
   return arr.reduce((acc, curr) => acc[curr], model);
